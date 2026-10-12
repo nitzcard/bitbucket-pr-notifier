@@ -5,9 +5,15 @@ cd "$(dirname "$0")/.."
 
 APP="build/PR Notify.app"
 
-# The default (swift-build) backend fails under Command Line Tools; use the native one.
-swift build -c release --build-system native
-BIN="$(swift build -c release --build-system native --show-bin-path)/PRNotify"
+# The default (swift-build) backend fails under Command Line Tools ("Unknown error
+# parsing property list" as of Swift 6.4), so use the native one and hide its
+# deprecation warning. Retry the default when the toolchain updates.
+swift_build() {
+    swift build -c release --build-system native "$@" \
+        2> >(grep -v "'--build-system native' has been deprecated" >&2)
+}
+swift_build
+BIN="$(swift_build --show-bin-path)/PRNotify"
 
 rm -rf "$APP" build/AppIcon.iconset
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

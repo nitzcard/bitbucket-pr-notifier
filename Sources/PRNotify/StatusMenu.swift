@@ -32,7 +32,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             _ = model.notificationsAllowed
             _ = model.autoRefresh
             if let openMenu { menuNeedsUpdate(openMenu) }
-        } onChange: {
+        } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.updateButton() }
         }
     }

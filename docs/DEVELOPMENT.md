@@ -36,3 +36,14 @@ after every rebuild of an ad-hoc-signed app.
   Xcode, so the code uses `@ViewState` (an alias for the property wrapper).
 - SwiftPM's default build backend fails under Command Line Tools, so the build
   script passes `--build-system native`.
+
+## Releasing
+
+```sh
+./scripts/release.sh 1.0.1
+```
+
+It sets the version in `Info.plist`, builds without OAuth keys, commits and tags
+`v1.0.1`, pushes, and publishes a GitHub release with `Bitbucket-PR-Notifier.zip`
+and generated notes. Run it from a clean `main`. The app's update check compares
+its version with the latest release's tag, so always release through this script.

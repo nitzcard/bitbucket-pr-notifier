@@ -40,10 +40,12 @@ after every rebuild of an ad-hoc-signed app.
 ## Releasing
 
 ```sh
-./scripts/release.sh 1.0.1
+./scripts/release.sh          # next patch version: 1.0.0 -> 1.0.1
+./scripts/release.sh 1.2.0    # or a version of your choice (must be newer)
 ```
 
-It sets the version in `Info.plist`, builds without OAuth keys, commits and tags
-`v1.0.1`, pushes, and publishes a GitHub release with `Bitbucket-PR-Notifier.zip`
-and generated notes. Run it from a clean `main`. The app's update check compares
-its version with the latest release's tag, so always release through this script.
+It writes the version to `Info.plist`, builds without OAuth keys, commits and
+tags `v<version>`, pushes, and publishes a GitHub release with
+`Bitbucket-PR-Notifier.zip` and generated notes. Run it from a clean `main`. The
+app's update check compares its version with the latest release's tag, so always
+release through this script.

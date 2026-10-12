@@ -14,9 +14,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/PRNotify"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
-# Optional "Sign in with Bitbucket": consumer key/secret from the environment or
-# a git-ignored oauth.env (see README). Without them only API-token sign-in shows.
-[ -f oauth.env ] && source oauth.env
+# Optional "Sign in with Bitbucket": consumer key/secret from the environment
+# (scripts/build-with-keys.sh sets them from oauth.env). Without them only
+# API-token sign-in shows, and the app is safe to share.
 if [ -n "${BITBUCKET_OAUTH_KEY:-}" ] && [ -n "${BITBUCKET_OAUTH_SECRET:-}" ]; then
     /usr/libexec/PlistBuddy -c "Add :PRNOAuthClientID string $BITBUCKET_OAUTH_KEY" "$APP/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Add :PRNOAuthClientSecret string $BITBUCKET_OAUTH_SECRET" "$APP/Contents/Info.plist"

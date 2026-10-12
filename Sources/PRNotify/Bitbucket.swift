@@ -38,15 +38,6 @@ struct PullRequest: Identifiable, Equatable, Decodable {
             .compactMap { $0.user?.uuid })
     }
 
-    /// "Maya Gal · 💬 3 · ✅ · ⏰ 15:30": my comments, approval and reminder, when present.
-    func details(me: String?, myComments: Int, reminder: Reminder?) -> String {
-        var parts = [author]
-        if myComments > 0 { parts.append("💬 \(myComments)") }
-        if let me, approvers.contains(me) { parts.append("✅") }
-        if let reminder { parts.append(reminder.badge) }
-        return parts.joined(separator: " · ")
-    }
-
     /// Unreviewed by `me`: no comment and no approval yet.
     func isUnreviewed(by me: String?) -> Bool {
         guard let me else { return true }
@@ -175,7 +166,8 @@ struct BitbucketClient {
         while let url = next {
             let page: Page<T> = try await get(url)
             results += page.values
-            next = page.next
+            // Only follow pages on Bitbucket's API, so the credentials never go elsewhere.
+            next = page.next.flatMap { $0.scheme == "https" && $0.host == Self.base.host ? $0 : nil }
         }
         return results
     }

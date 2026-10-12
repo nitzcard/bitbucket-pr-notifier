@@ -37,10 +37,12 @@ Shown only when the app was built with an OAuth consumer. One person sets this u
    BITBUCKET_OAUTH_KEY=...
    BITBUCKET_OAUTH_SECRET=...
    ```
-4. Run `./scripts/build-app.sh`; it prints "OAuth sign-in enabled."
+4. Run `./scripts/build-with-keys.sh`; it prints "OAuth sign-in enabled."
+   Plain `./scripts/build-app.sh` ignores `oauth.env` and builds without the keys.
 
-Bitbucket has no PKCE, so the secret is embedded in the built app. Anyone with the
-app could extract it and impersonate "PR Notify" on the consent screen, but it
+Bitbucket has no PKCE, so the secret is embedded in the built app; keep that build
+to yourself and share only one from `build-app.sh`. Anyone with the app could
+extract it and impersonate "PR Notify" on the consent screen, but it
 grants no access to anyone's data on its own.
 
 ### Option B: API token

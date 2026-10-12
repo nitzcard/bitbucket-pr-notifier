@@ -38,11 +38,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         content.sound = .default
 
         if prs.count == 1, let pr = prs.first {
-            content.title = "New PR to review: \(pr.title)"
-            content.body = "by \(pr.author)"
+            content.title = pr.title
+            content.body = pr.author
             content.userInfo = ["url": pr.url.absoluteString]
         } else {
-            content.title = "\(prs.count) new PRs to review"
+            content.title = "\(prs.count) Pull Requests"
             content.body = prs.map { "• \($0.title) — \($0.author)" }.joined(separator: "\n")
         }
 

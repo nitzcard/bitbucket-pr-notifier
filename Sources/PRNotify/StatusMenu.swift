@@ -78,14 +78,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             for pr in model.pullRequests {
                 let row = action(pr.title, #selector(openPR(_:)))
                 row.representedObject = pr.url
-                row.attributedTitle = Self.twoLineTitle(pr.title, details: pr.details(
-                    me: me, myComments: model.myCommentCount(pr), reminder: model.reminder(for: pr)))
+                row.attributedTitle = Self.twoLineTitle(pr.title, details: NSAttributedString(string: model.details(for: pr, includeReminder: true)))
                 menu.addItem(row)
                 // Holding ⌥ swaps the row for its reminder action (standard Mac alternate item).
                 if pr.isUnreviewed(by: me) {
                     let alt = action(model.reminder(for: pr) == nil ? "Remind Me About This…" : "Edit Reminder…",
                                      #selector(remindAbout(_:)))
-                    alt.attributedTitle = Self.twoLineTitle(alt.title, details: Self.truncate(pr.title))
+                    alt.attributedTitle = Self.twoLineTitle(alt.title, details: NSAttributedString(string: Self.truncate(pr.title)))
                     alt.representedObject = pr.id
                     alt.isAlternate = true
                     alt.keyEquivalentModifierMask = [.option]
@@ -132,13 +131,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return item
     }
 
-    private static func twoLineTitle(_ title: String, details: String) -> NSAttributedString {
+    private static let detailsFont = NSFont.menuFont(ofSize: NSFont.systemFontSize - 1)
+
+    private static func twoLineTitle(_ title: String, details: NSAttributedString) -> NSAttributedString {
         let text = NSMutableAttributedString(string: truncate(title),
                                              attributes: [.font: NSFont.menuFont(ofSize: 0)])
-        text.append(NSAttributedString(string: "\n" + details, attributes: [
-            .font: NSFont.menuFont(ofSize: NSFont.systemFontSize - 1),
-            .foregroundColor: NSColor.secondaryLabelColor,
-        ]))
+        let second = NSMutableAttributedString(string: "\n")
+        second.append(details)
+        second.addAttributes([.font: detailsFont, .foregroundColor: NSColor.secondaryLabelColor],
+                             range: NSRange(location: 0, length: second.length))
+        text.append(second)
         return text
     }
 

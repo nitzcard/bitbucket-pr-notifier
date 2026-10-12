@@ -52,10 +52,10 @@ struct PRListView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(model.pullRequests) { pr in
                             PRRow(pr: pr,
-                                  details: pr.details(me: model.userUUID, myComments: model.myCommentCount(pr),
-                                                      reminder: model.reminder(for: pr)),
+                                  // The reminder shows on the row's bell button instead.
+                                  details: model.details(for: pr, includeReminder: false),
                                   canRemind: pr.isUnreviewed(by: model.userUUID),
-                                  hasReminder: model.reminder(for: pr) != nil)
+                                  reminder: model.reminder(for: pr))
                                 .contextMenu {
                                     Button("Remind Me…") { WindowManager.shared.showReminder(for: pr) }
                                         .disabled(!pr.isUnreviewed(by: model.userUUID))
@@ -115,8 +115,10 @@ struct PRRow: View {
     let pr: PullRequest
     let details: String
     let canRemind: Bool
-    let hasReminder: Bool
+    let reminder: Reminder?
     @ViewState private var hovering = false
+
+    private var isNag: Bool { if case .nag = reminder?.kind { true } else { false } }
 
     var body: some View {
         HStack(alignment: .center, spacing: 6) {
@@ -134,12 +136,19 @@ struct PRRow: View {
             .buttonStyle(.plain)
             .help(pr.url.absoluteString)
 
-            if canRemind && (hovering || hasReminder) {
+            if canRemind && (hovering || reminder != nil) {
+                // Bell for a one-time reminder, two-arrow circle for a nag; its time below.
                 Button { WindowManager.shared.showReminder(for: pr) } label: {
-                    Image(systemName: hasReminder ? "bell.fill" : "bell").iconHover()
+                    VStack(spacing: 2) {
+                        // The two-arrow circle (🔄's shape) as a symbol, so it's tinted like the
+                        // bell and distinct from the header's single-arrow refresh button.
+                        Image(systemName: reminder.map { $0.symbol + (isNag ? "" : ".fill") } ?? "bell")
+                        if let reminder { Text(reminder.shortText).font(.caption2) }
+                    }
+                    .iconHover()
                 }
                 .buttonStyle(.plain)
-                .help(hasReminder ? "Edit Reminder…" : "Remind Me…")
+                .help(reminder.map { "\($0.text). Click to edit." } ?? "Remind Me…")
             }
         }
         .padding(.horizontal, 9)
@@ -174,18 +183,11 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Notifications") {
-                LabeledContent("Status") {
-                    Text(model.notificationsAllowed ? "On" : "Off")
-                        .foregroundStyle(model.notificationsAllowed ? Color.secondary : Color.red)
-                }
-                if !model.notificationsAllowed {
-                    Text("You won't be alerted about new pull requests until notifications are turned on.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Button(model.notificationsAllowed ? "Notification Settings…" : "Turn On Notifications…") {
-                    NSWorkspace.shared.open(Notifier.settingsURL)
-                }
+                Text(model.notificationsAllowed
+                     ? "Notifications are enabled."
+                     : "Notifications are disabled, so you won't be alerted about new pull requests.")
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Notification Settings…") { NSWorkspace.shared.open(Notifier.settingsURL) }
             }
             if model.isSignedIn {
                 refreshSection

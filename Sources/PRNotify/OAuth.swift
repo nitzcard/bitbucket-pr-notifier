@@ -28,12 +28,12 @@ struct OAuthConfig {
 
     /// Opens the browser, waits for Bitbucket to redirect back, and exchanges the code.
     func signIn() async throws -> OAuthTokens {
-        let server = LoopbackServer()
+        let state = UUID().uuidString
+        let server = LoopbackServer(state: state)
         let port = try await server.start()
         // Bitbucket ignores the port for loopback redirects, so the consumer's
         // callback URL is registered as plain http://localhost.
         let redirect = "http://localhost:\(port)/callback"
-        let state = UUID().uuidString
 
         var authorize = URLComponents(url: Self.authorizeURL, resolvingAgainstBaseURL: false)!
         authorize.queryItems = [
@@ -45,9 +45,8 @@ struct OAuthConfig {
         NSWorkspace.shared.open(authorize.url!)
 
         let callback = try await server.waitForCallback()
-        let items = callback.queryItems ?? []
-        guard items.first(where: { $0.name == "state" })?.value == state,
-              let code = items.first(where: { $0.name == "code" })?.value else {
+        // The server only returns callbacks carrying our `state`.
+        guard let code = callback.queryItems?.first(where: { $0.name == "code" })?.value else {
             throw BitbucketError.unauthorized("The browser sign-in was not completed.")
         }
         return try await requestTokens([
@@ -90,16 +89,25 @@ struct OAuthConfig {
     }
 }
 
-/// A one-shot HTTP server on a random local port that catches the OAuth redirect.
+/// A one-shot HTTP server on a random loopback port that catches the OAuth redirect.
+/// It ignores requests without the expected `state`, so another local process or
+/// a web page probing the port can't end the sign-in.
 /// All mutable state is only touched on `queue`.
 private final class LoopbackServer: @unchecked Sendable {
+    private let state: String
     private let queue = DispatchQueue(label: "PRNotify.LoopbackServer")
     private var listener: NWListener?
     private var callback: CheckedContinuation<URLComponents, Error>?
     private var result: Result<URLComponents, Error>? // arrived before anyone waited
 
+    init(state: String) { self.state = state }
+
     func start() async throws -> UInt16 {
-        let listener = try NWListener(using: .tcp)
+        // Loopback only (IPv4 and IPv6, since "localhost" may resolve to either);
+        // by default NWListener accepts connections on every interface.
+        let parameters = NWParameters.tcp
+        parameters.requiredInterfaceType = .loopback
+        let listener = try NWListener(using: parameters)
         self.listener = listener
         return try await withCheckedThrowingContinuation { continuation in
             // Clearing the handler after the first terminal state guarantees a single resume.
@@ -140,7 +148,8 @@ private final class LoopbackServer: @unchecked Sendable {
             let parts = requestLine.split(separator: " ")
             let target = parts.count > 1 ? String(parts[1]) : ""
 
-            guard target.hasPrefix("/callback"), let components = URLComponents(string: target) else {
+            guard target.hasPrefix("/callback"), let components = URLComponents(string: target),
+                  components.queryItems?.first(where: { $0.name == "state" })?.value == self?.state else {
                 Self.respond(connection, status: "404 Not Found", body: "")
                 return
             }

@@ -171,6 +171,7 @@ final class AppModel {
             if userInitiated { try? await Task.sleep(until: started + .milliseconds(400)) }
             pullRequests = prs
             pruneReminders(prs)
+            topUpFastNags()
             lastUpdated = Date()
             status = .ok
         } catch BitbucketError.unauthorized(_) {

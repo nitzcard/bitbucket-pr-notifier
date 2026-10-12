@@ -20,5 +20,5 @@ Menus:
 ## Build gotchas (Command Line Tools, no Xcode)
 
 - Use `@ViewState` (alias of SwiftUI's `State` wrapper). The `@State` macro's plugin ships only with Xcode.
-- Build with `./scripts/build-app.sh`, which passes `--build-system native`.
+- Build with `./scripts/build-with-keys.sh` while developing. It embeds the OAuth keys from `oauth.env` so browser sign-in works, then runs `build-app.sh` (which passes `--build-system native`). If `oauth.env` is missing, build with `./scripts/build-app.sh` and tell the user browser sign-in is off in that build.
 - An `NSHostingController` with `.preferredContentSize` crashes when its content changes size during the window's first layout. For such windows, give them a fixed size (`fitsContent: false` in `WindowManager`).

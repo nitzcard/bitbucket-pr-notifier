@@ -68,10 +68,11 @@ enum Credentials: Codable {
         let fm = FileManager.default
         try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
                                 attributes: [.posixPermissions: 0o700])
-        // Create with owner-only permissions before writing the secret.
+        // Owner-only permissions before writing the secret, even if the file already existed.
         if !fm.fileExists(atPath: url.path) {
             fm.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600])
         }
+        guard (try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)) != nil else { return }
         try? data.write(to: url)
     }
 

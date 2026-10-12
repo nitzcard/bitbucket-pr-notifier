@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 enum Keychain {
-    private static let service = "PRNotify"
+    private static let service = "BitbucketPRNotifier"
 
     static func load(account: String) -> Data? {
         let query: [String: Any] = [
@@ -46,13 +46,20 @@ enum Credentials: Codable {
 
     private static let keychainAccount = "credentials"
 
-    private static var fileURL: URL {
+    private static func fileURL(_ name: String = "credentials") -> URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: "Library/Application Support/PRNotify/credentials.json")
+            .appending(path: "Library/Application Support/BitbucketPRNotifier/\(name).json")
+    }
+
+    /// The API token from before the last sign-out, to fill in the next sign-in.
+    static var signedOutToken: String? {
+        guard let data = try? Data(contentsOf: fileURL("signed-out")),
+              case .apiToken(_, let token) = try? JSONDecoder().decode(Credentials.self, from: data) else { return nil }
+        return token
     }
 
     static func load() -> Credentials? {
-        if let data = try? Data(contentsOf: fileURL) {
+        if let data = try? Data(contentsOf: fileURL()) {
             return try? JSONDecoder().decode(Credentials.self, from: data)
         }
         guard let data = Keychain.load(account: keychainAccount),
@@ -62,9 +69,9 @@ enum Credentials: Codable {
         return credentials
     }
 
-    func save() {
+    func save(as name: String = "credentials") {
         guard let data = try? JSONEncoder().encode(self) else { return }
-        let url = Self.fileURL
+        let url = Self.fileURL(name)
         let fm = FileManager.default
         try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
                                 attributes: [.posixPermissions: 0o700])
@@ -76,7 +83,9 @@ enum Credentials: Codable {
         try? data.write(to: url)
     }
 
+    /// Signing out keeps an API token aside (same owner-only file) for next time.
     static func delete() {
-        try? FileManager.default.removeItem(at: fileURL)
+        if case .apiToken = load() { load()?.save(as: "signed-out") }
+        try? FileManager.default.removeItem(at: fileURL())
     }
 }

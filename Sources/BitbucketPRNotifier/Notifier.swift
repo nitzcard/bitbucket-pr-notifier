@@ -2,7 +2,7 @@ import AppKit
 import OSLog
 import UserNotifications
 
-private let log = Logger(subsystem: "io.github.prnotify", category: "notifications")
+private let log = Logger(subsystem: "io.github.bitbucketprnotifier", category: "notifications")
 
 /// Posts Slack-style banners and routes clicks: a single PR opens in the
 /// browser, a grouped notification opens the main window.
@@ -29,7 +29,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    /// System Settings → Notifications → PR Notify.
+    /// System Settings → Notifications → Bitbucket PR Notifier.
     static let settingsURL = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(Bundle.main.bundleIdentifier ?? "")")!
 
     static func notify(_ prs: [PullRequest]) {

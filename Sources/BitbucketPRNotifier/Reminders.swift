@@ -2,7 +2,7 @@ import AppKit
 import OSLog
 import UserNotifications
 
-private let log = Logger(subsystem: "io.github.prnotify", category: "reminders")
+private let log = Logger(subsystem: "io.github.bitbucketprnotifier", category: "reminders")
 
 /// A per-PR reminder: once at a time, or repeating ("nag"). Deleted when I
 /// comment on or approve the PR, or when it leaves my list.
@@ -84,12 +84,12 @@ extension AppModel {
         Notifier.cancel(id: Self.reminderID(repo: repo, pr: prID), keepDelivered: keepDelivered)
     }
 
-    /// Drops reminders for PRs that are gone or that I've reviewed, and one-time
-    /// reminders that already fired.
+    /// Drops reminders for PRs that are gone (merged or declined), and one-time
+    /// reminders that already fired. Reviewing a PR keeps its reminder.
     func pruneReminders(_ prs: [PullRequest]) {
         let byID = Dictionary(uniqueKeysWithValues: prs.map { ($0.id, $0) })
         for (id, reminder) in reminders {
-            let gone = byID[id].map { !$0.isUnreviewed(by: userUUID) } ?? true
+            let gone = byID[id] == nil
             var fired = false
             if case .once(let date) = reminder.kind { fired = date < Date() }
             if gone { clearReminder(for: id) } else if fired { clearReminder(for: id, keepDelivered: true) }

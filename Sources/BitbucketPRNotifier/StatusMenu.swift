@@ -31,6 +31,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             _ = model.status
             _ = model.notificationsAllowed
             _ = model.autoRefresh
+            _ = Updater.shared.available
             if let openMenu { menuNeedsUpdate(openMenu) }
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.updateButton() }
@@ -52,6 +53,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(action("Turn On Notifications…", #selector(openNotificationSettings)))
             menu.addItem(.separator())
         }
+        if Updater.shared.available != nil {
+            menu.addItem(action("Download Update", #selector(downloadUpdate)))
+            menu.addItem(.separator())
+        }
 
         if let repo = model.repo {
             let header = action(repo, #selector(openRepo))
@@ -62,34 +67,24 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        switch model.status {
-        case _ where model.showsSkeleton:
+        if model.showsSkeleton {
             for width in [34, 27, 31] { menu.addItem(Self.skeletonItem(width: width)) }
-        case .signedOut:
-            menu.addItem(action("Sign In…", #selector(openSettings)))
-        case .noRepo:
-            menu.addItem(action("Choose Repository…", #selector(openSettings)))
-        case .error(let text) where model.pullRequests.isEmpty:
-            menu.addItem(disabled(text))
-        default:
-            if model.pullRequests.isEmpty {
-                menu.addItem(disabled("No Pull Requests to Review"))
-            }
+        } else if let placeholder = model.listPlaceholder {
+            menu.addItem(disabled(placeholder.text))
+            if let command = placeholder.action { menu.addItem(action(command, #selector(openSettings))) }
+        } else {
             for pr in model.pullRequests {
                 let row = action(pr.title, #selector(openPR(_:)))
                 row.representedObject = pr.url
                 row.attributedTitle = Self.twoLineTitle(pr.title, details: NSAttributedString(string: model.details(for: pr, includeReminder: true)))
                 menu.addItem(row)
                 // Holding ⌥ swaps the row for its reminder action (standard Mac alternate item).
-                if pr.isUnreviewed(by: me) {
-                    let alt = action(model.reminder(for: pr) == nil ? "Remind Me About This…" : "Edit Reminder…",
-                                     #selector(remindAbout(_:)))
-                    alt.attributedTitle = Self.twoLineTitle(alt.title, details: NSAttributedString(string: Self.truncate(pr.title)))
-                    alt.representedObject = pr.id
-                    alt.isAlternate = true
-                    alt.keyEquivalentModifierMask = [.option]
-                    menu.addItem(alt)
-                }
+                let alt = action(model.remindCommand(for: pr), #selector(remindAbout(_:)))
+                alt.attributedTitle = Self.twoLineTitle(alt.title, details: NSAttributedString(string: Self.truncate(pr.title)))
+                alt.representedObject = pr.id
+                alt.isAlternate = true
+                alt.keyEquivalentModifierMask = [.option]
+                menu.addItem(alt)
             }
         }
 
@@ -100,7 +95,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         if !model.pullRequests.contains(where: { $0.isUnreviewed(by: me) }) { openAll.action = nil }
         menu.addItem(openAll)
         let remind = action("Remind Me…", #selector(openReminder))
-        if !model.pullRequests.contains(where: { $0.isUnreviewed(by: me) }) { remind.action = nil }
+        if model.pullRequests.isEmpty { remind.action = nil }
         menu.addItem(remind)
         // Only needed when the app isn't checking on its own.
         if !model.autoRefresh { menu.addItem(action("Refresh", #selector(refresh), key: "r")) }
@@ -108,6 +103,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(action("Open PR List", #selector(openWindow)))
         menu.addItem(action("Settings…", #selector(openSettings), key: ","))
+        menu.addItem(action("Check for Updates…", #selector(checkForUpdates)))
         menu.addItem(.separator())
         menu.addItem(action("Quit", #selector(quit), key: "q"))
 
@@ -185,5 +181,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func openWindow() { WindowManager.shared.showMain() }
     @objc private func openSettings() { WindowManager.shared.showSettings() }
     @objc private func openNotificationSettings() { NSWorkspace.shared.open(Notifier.settingsURL) }
+    @objc private func downloadUpdate() { Updater.shared.download() }
+    @objc private func checkForUpdates() { Updater.shared.checkFromMenu() }
     @objc private func quit() { NSApp.terminate(nil) }
 }

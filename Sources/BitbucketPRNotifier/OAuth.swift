@@ -18,8 +18,8 @@ struct OAuthConfig {
 
     static let bundled: OAuthConfig? = {
         let info = Bundle.main.infoDictionary ?? [:]
-        guard let id = info["PRNOAuthClientID"] as? String, !id.isEmpty,
-              let secret = info["PRNOAuthClientSecret"] as? String, !secret.isEmpty else { return nil }
+        guard let id = info["BPRNOAuthClientID"] as? String, !id.isEmpty,
+              let secret = info["BPRNOAuthClientSecret"] as? String, !secret.isEmpty else { return nil }
         return OAuthConfig(clientID: id, secret: secret)
     }()
 
@@ -95,7 +95,7 @@ struct OAuthConfig {
 /// All mutable state is only touched on `queue`.
 private final class LoopbackServer: @unchecked Sendable {
     private let state: String
-    private let queue = DispatchQueue(label: "PRNotify.LoopbackServer")
+    private let queue = DispatchQueue(label: "BitbucketPRNotifier.LoopbackServer")
     private var listener: NWListener?
     private var callback: CheckedContinuation<URLComponents, Error>?
     private var result: Result<URLComponents, Error>? // arrived before anyone waited
@@ -155,7 +155,7 @@ private final class LoopbackServer: @unchecked Sendable {
             }
             Self.respond(connection, status: "200 OK", body: """
                 <html><body style="font-family: -apple-system; text-align: center; padding-top: 80px">
-                <h2>PR Notify is signed in</h2><p>You can close this tab.</p></body></html>
+                <h2>Bitbucket PR Notifier is signed in</h2><p>You can close this tab.</p></body></html>
                 """)
             self?.finish(.success(components))
         }

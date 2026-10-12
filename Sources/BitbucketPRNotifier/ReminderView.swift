@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The "Remind Me" window: pick an unreviewed PR, then a one-time time or a
+/// The "Remind Me" window: pick a PR, then a one-time time or a
 /// repeating interval. Also where a PR's reminder is cancelled.
 struct ReminderView: View {
     @Environment(AppModel.self) private var model
@@ -20,7 +20,7 @@ struct ReminderView: View {
     init(preselected: Int?, done: @escaping () -> Void) {
         self.done = done
         let model = AppModel.shared
-        let candidates = model.pullRequests.filter { $0.isUnreviewed(by: model.userUUID) }
+        let candidates = model.pullRequests
         let pr = candidates.first { $0.id == preselected } ?? candidates.first
         _prID = ViewState(initialValue: pr?.id)
         let values = Self.values(for: pr.flatMap { model.reminder(for: $0)?.kind })
@@ -32,7 +32,7 @@ struct ReminderView: View {
     }
 
     private var candidates: [PullRequest] {
-        model.pullRequests.filter { $0.isUnreviewed(by: model.userUUID) }
+        model.pullRequests
     }
 
     private var selected: PullRequest? { candidates.first { $0.id == prID } }

@@ -14,7 +14,7 @@ struct PRListView: View {
 
     private var header: some View {
         HStack {
-            Text(model.repo ?? "PR Notify").font(.headline).lineLimit(1)
+            Text(model.repo ?? "Bitbucket PR Notifier").font(.headline).lineLimit(1)
             Spacer()
             if model.isRefreshing { ProgressView().controlSize(.small) }
             Button { Task { await model.refresh(userInitiated: true) } } label: { Image(systemName: "arrow.clockwise").iconHover() }
@@ -37,35 +37,24 @@ struct PRListView: View {
     }
 
     @ViewBuilder private var loadedContent: some View {
-        switch model.status {
-        case .signedOut:
-            message("Sign in to Bitbucket to see your pull requests.", action: "Sign In…")
-        case .noRepo:
-            message("Choose a repository to watch.", action: "Choose Repository…")
-        case .error(let text) where model.pullRequests.isEmpty:
-            message(text, action: nil)
-        default:
-            if model.pullRequests.isEmpty {
-                message("No pull requests to review.", action: nil)
-            } else {
+        if let placeholder = model.listPlaceholder {
+            message(placeholder.text, action: placeholder.action)
+        } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(model.pullRequests) { pr in
                             PRRow(pr: pr,
                                   // The reminder shows on the row's bell button instead.
                                   details: model.details(for: pr, includeReminder: false),
-                                  canRemind: pr.isUnreviewed(by: model.userUUID),
                                   reminder: model.reminder(for: pr))
                                 .contextMenu {
-                                    Button("Remind Me…") { WindowManager.shared.showReminder(for: pr) }
-                                        .disabled(!pr.isUnreviewed(by: model.userUUID))
+                                    Button(model.remindCommand(for: pr)) { WindowManager.shared.showReminder(for: pr) }
                                 }
                         }
                     }
                     .padding(5)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            }
         }
     }
 
@@ -114,7 +103,6 @@ struct SkeletonRows: View {
 struct PRRow: View {
     let pr: PullRequest
     let details: String
-    let canRemind: Bool
     let reminder: Reminder?
     @ViewState private var hovering = false
 
@@ -136,7 +124,7 @@ struct PRRow: View {
             .buttonStyle(.plain)
             .help(pr.url.absoluteString)
 
-            if canRemind && (hovering || reminder != nil) {
+            if hovering || reminder != nil {
                 // Bell for a one-time reminder, two-arrow circle for a nag; its time below.
                 Button { WindowManager.shared.showReminder(for: pr) } label: {
                     VStack(spacing: 2) {
@@ -172,6 +160,9 @@ struct SettingsView: View {
     @ViewState private var loadingRepos = false
     @ViewState private var repoError: String?
 
+    /// The screen's usable height, less the title bar and a margin.
+    private static var maxHeight: CGFloat { (NSScreen.main?.visibleFrame.height ?? 800) - 80 }
+
     private static let tokenHelp = URL(string: "https://id.atlassian.com/manage-profile/security/api-tokens")!
     private static let scopes = [
         "read:user:bitbucket",
@@ -202,17 +193,18 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .scrollDisabled(true)
-        .frame(width: 480)
-        .fixedSize(horizontal: false, vertical: true)
+        // As tall as its content, but never taller than the screen: past that
+        // the form scrolls, so its bottom (and padding) can always be reached.
+        .frame(minWidth: 480, idealWidth: 480, maxWidth: .infinity, maxHeight: Self.maxHeight)
         .task(id: model.isSignedIn) { await loadReposIfNeeded() }
-        .onAppear { if email.isEmpty { email = model.lastEmail } }
+        .onAppear { fillInLastSignIn() }
+        .onChange(of: model.isSignedIn) { _, signedIn in if !signedIn { fillInLastSignIn() } }
         .onDisappear { browserSignIn?.cancel() }
     }
 
     private var refreshSection: some View {
         @Bindable var model = model
-        return Section("Refresh") {
+        return Section("Refresh PR Interval") {
             Toggle("Refresh automatically", isOn: $model.autoRefresh)
             HStack(spacing: 6) {
                 Text("Every:")
@@ -253,6 +245,12 @@ struct SettingsView: View {
             Text("Opens Bitbucket in your browser. Approve access and you're signed in.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+    }
+
+    /// After signing out, the same email and API token are ready to sign in again.
+    private func fillInLastSignIn() {
+        if email.isEmpty { email = model.lastEmail }
+        if token.isEmpty { token = Credentials.signedOutToken ?? "" }
     }
 
     @ViewBuilder private var tokenSections: some View {

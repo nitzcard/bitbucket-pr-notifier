@@ -2,9 +2,9 @@
 import PackageDescription
 
 let package = Package(
-    name: "PRNotify",
+    name: "BitbucketPRNotifier",
     platforms: [.macOS(.v14)],
     targets: [
-        .executableTarget(name: "PRNotify", path: "Sources/PRNotify")
+        .executableTarget(name: "BitbucketPRNotifier", path: "Sources/BitbucketPRNotifier")
     ]
 )

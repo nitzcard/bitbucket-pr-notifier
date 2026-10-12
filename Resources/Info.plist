@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>PR Notify</string>
+    <string>Bitbucket PR Notifier</string>
     <key>CFBundleDisplayName</key>
-    <string>PR Notify</string>
+    <string>Bitbucket PR Notifier</string>
     <key>CFBundleIdentifier</key>
-    <string>io.github.prnotify</string>
+    <string>io.github.bitbucketprnotifier</string>
     <key>CFBundleExecutable</key>
-    <string>PRNotify</string>
+    <string>BitbucketPRNotifier</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>

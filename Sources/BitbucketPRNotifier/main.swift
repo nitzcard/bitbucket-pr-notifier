@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-// `PRNotify --export-iconset <dir>` renders the app icon for the build script.
+// `BitbucketPRNotifier --export-iconset <dir>` renders the app icon for the build script.
 let args = CommandLine.arguments
 if args.count == 3, args[1] == "--export-iconset" {
     try IconArt.exportIconset(to: URL(fileURLWithPath: args[2]))
@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Notifier.shared.onOpenWindow = { WindowManager.shared.showMain() }
         statusMenu = StatusMenu()
         AppModel.shared.start()
+        Updater.shared.start()
 
         WindowManager.shared.showMain()
         if AppModel.shared.status == .signedOut { WindowManager.shared.showSettings() }
@@ -34,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 /// Windows and the status menu are AppKit-managed (see WindowManager); the
 /// SwiftUI app only supplies the standard main menu (Edit menu for paste, etc.).
-struct PRNotifyApp: App {
+struct BitbucketPRNotifierApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
@@ -43,9 +44,10 @@ struct PRNotifyApp: App {
                 CommandGroup(replacing: .appSettings) {
                     Button("Settings…") { WindowManager.shared.showSettings() }
                         .keyboardShortcut(",")
+                    Button("Check for Updates…") { Updater.shared.checkFromMenu() }
                 }
             }
     }
 }
 
-PRNotifyApp.main()
+BitbucketPRNotifierApp.main()

@@ -1,0 +1,157 @@
+import SwiftUI
+
+/// The "Remind Me" window: pick an unreviewed PR, then a one-time time or a
+/// repeating interval. Also where a PR's reminder is cancelled.
+struct ReminderView: View {
+    @Environment(AppModel.self) private var model
+    let done: () -> Void
+
+    private enum Mode: Hashable { case once, repeatedly }
+    private enum Unit: Hashable { case minutes, hours }
+
+    @ViewState private var prID: Int?
+    @ViewState private var mode = Mode.once
+    @ViewState private var date = Date().addingTimeInterval(3600)
+    @ViewState private var every = 1
+    @ViewState private var unit = Unit.hours
+
+    /// State is filled in here, not in onAppear: changing it after the first
+    /// layout would resize the window mid-layout.
+    init(preselected: Int?, done: @escaping () -> Void) {
+        self.done = done
+        let model = AppModel.shared
+        let candidates = model.pullRequests.filter { $0.isUnreviewed(by: model.userUUID) }
+        let pr = candidates.first { $0.id == preselected } ?? candidates.first
+        _prID = ViewState(initialValue: pr?.id)
+        let values = Self.values(for: pr.flatMap { model.reminder(for: $0)?.kind })
+        _mode = ViewState(initialValue: values.mode)
+        _date = ViewState(initialValue: values.date)
+        _every = ViewState(initialValue: values.every)
+        _unit = ViewState(initialValue: values.unit)
+    }
+
+    private var candidates: [PullRequest] {
+        model.pullRequests.filter { $0.isUnreviewed(by: model.userUUID) }
+    }
+
+    private var selected: PullRequest? { candidates.first { $0.id == prID } }
+
+    /// Classic Mac dialog layout: right-aligned "Label:" beside its control,
+    /// radio options all visible (unselected option's controls dimmed),
+    /// default button bottom right, destructive action bottom left.
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 12) {
+                GridRow {
+                    Text("Pull Request:").gridColumnAlignment(.trailing)
+                    Picker("Pull Request", selection: $prID) {
+                        ForEach(candidates) { pr in Text(pr.title).lineLimit(1).tag(Optional(pr.id)) }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 320, alignment: .leading)
+                }
+                GridRow {
+                    Text("Remind:")
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            radio("Once at", .once)
+                            DatePicker("At", selection: $date, in: Date()...).labelsHidden()
+                                .disabled(mode != .once)
+                        }
+                        HStack(spacing: 6) {
+                            ForEach(Reminder.presets, id: \.title) { preset in
+                                Button(preset.title) { date = preset.date() }.controlSize(.small)
+                            }
+                        }
+                        .padding(.leading, 20)
+                        .disabled(mode != .once)
+
+                        HStack(spacing: 6) {
+                            radio("Every", .repeatedly)
+                            // Digits only: anything else is dropped as it's typed.
+                            TextField("Every", text: Binding(
+                                get: { every == 0 ? "" : String(every) },
+                                set: { every = Int($0.filter(\.isNumber).prefix(3)) ?? 0 }))
+                                .labelsHidden()
+                                .textFieldStyle(.roundedBorder)
+                                .multilineTextAlignment(.leading)
+                                .frame(width: 48)
+                            // Whole numbers from 1: macOS repeats a scheduled notification at most once a minute.
+                            Stepper("Every", value: $every, in: 0...999).labelsHidden()
+                            Picker("Unit", selection: $unit) {
+                                Text("Minutes").tag(Unit.minutes)
+                                Text("Hours").tag(Unit.hours)
+                            }
+                            .labelsHidden()
+                            .fixedSize()
+                        }
+                        .disabled(mode != .repeatedly)
+                        // Keep the radio itself clickable while its controls are dimmed.
+                        .overlay(alignment: .leading) { if mode != .repeatedly { radio("Every", .repeatedly) } }
+
+                        Text(mode == .repeatedly && every < 1
+                             ? "Enter a whole number, 1 or more."
+                             : "Repeats until you comment on or approve it.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .padding(.leading, 20)
+                    }
+                }
+            }
+
+            HStack {
+                Button("Cancel Reminder") {
+                    if let selected { model.clearReminder(for: selected.id) }
+                    done()
+                }
+                .disabled(selected.flatMap { model.reminder(for: $0) } == nil)
+                Spacer(minLength: 24)
+                Button("Cancel", role: .cancel, action: done).keyboardShortcut(.cancelAction)
+                Button("Set Reminder", action: save)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(selected == nil || (mode == .repeatedly && every < 1))
+            }
+        }
+        .padding(20)
+        .fixedSize()
+        .onChange(of: prID) { _, _ in
+            let values = Self.values(for: selected.flatMap { model.reminder(for: $0)?.kind })
+            (mode, date, every, unit) = (values.mode, values.date, values.every, values.unit)
+        }
+    }
+
+    private var seconds: TimeInterval { TimeInterval(every) * (unit == .hours ? 3600 : 60) }
+
+    /// A single native radio button bound to `mode`; two of these share it.
+    private func radio(_ title: String, _ value: Mode) -> some View {
+        Picker(title, selection: $mode) { Text(title).tag(value) }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+            .fixedSize()
+    }
+
+    /// Form values showing an existing reminder, or defaults when there's none.
+    private static func values(for kind: Reminder.Kind?) -> (mode: Mode, date: Date, every: Int, unit: Unit) {
+        switch kind {
+        case .once(let at):
+            return (.once, max(at, Date()), 1, .hours)
+        case .nag(let interval):
+            let minutes = Int(interval / 60)
+            return minutes % 60 == 0
+                ? (.repeatedly, Date().addingTimeInterval(3600), minutes / 60, .hours)
+                : (.repeatedly, Date().addingTimeInterval(3600), minutes, .minutes)
+        case nil:
+            return (.once, Date().addingTimeInterval(3600), 1, .hours)
+        }
+    }
+
+    private func save() {
+        guard let selected else { return }
+        switch mode {
+        case .once:
+            model.setReminder(.once(date), for: selected)
+        case .repeatedly:
+            model.setReminder(.nag(seconds), for: selected)
+        }
+        done()
+    }
+}

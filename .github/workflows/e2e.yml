@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # each test's GIF goes to its e2e-recordings/<test> branch
 
 jobs:
   # Each test in Tests/E2E/Tests.swift runs as its own job, so each gets its own check.
@@ -44,9 +44,37 @@ jobs:
           path: build/e2e-report
           if-no-files-found: ignore
 
+      # Job summaries can't play video, but show GIFs. Each test's branch holds
+      # one commit with its latest recording, force-pushed every run.
+      - name: Publish the recording
+        id: gif
+        if: always() && hashFiles(format('build/e2e-report/recordings/{0}.gif', matrix.test)) != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEST: ${{ matrix.test }}
+        run: |
+          dir=$(mktemp -d)
+          cp "build/e2e-report/recordings/$TEST.gif" "$dir/"
+          cd "$dir"
+          git init -q -b recording
+          git add .
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -qm "Recording of $TEST, run ${{ github.run_id }}"
+          git push -qf "https://x-access-token:$GH_TOKEN@github.com/${{ github.repository }}.git" "recording:refs/heads/e2e-recordings/$TEST"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Summary
         if: always() && hashFiles('build/e2e-report/summary.md') != ''
+        env:
+          TEST: ${{ matrix.test }}
+          SHA: ${{ steps.gif.outputs.sha }}
         run: |
-          cat build/e2e-report/summary.md >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "🎥 **[Download the report with the recording](${{ steps.upload.outputs.artifact-url }})** — open \`index.html\`; click a step's time to jump to it in the video." >> "$GITHUB_STEP_SUMMARY"
+          {
+            cat build/e2e-report/summary.md
+            echo
+            if [ -n "$SHA" ]; then
+              echo "![Recording of $TEST](https://raw.githubusercontent.com/${{ github.repository }}/$SHA/$TEST.gif)"
+              echo
+            fi
+            echo "🎥 **[Download the full-quality report](${{ steps.upload.outputs.artifact-url }})** — open \`index.html\`; click a step's time to jump to it in the video."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -76,6 +76,7 @@ struct Runner {
             }
             let duration = Date().timeIntervalSince(started)
             let video = recorder.stop()
+            if let video { _ = GIF.make(from: video) } // for the GitHub job summary
             app.quit()
             print(failure.map { "✘ \(test.name): \($0)" } ?? "✔ \(test.name)")
             return TestResult(name: test.name, duration: duration, failure: failure, steps: context.steps,

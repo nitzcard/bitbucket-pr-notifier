@@ -9,7 +9,8 @@ private let log = Logger(subsystem: "io.github.bitbucketprnotifier", category: "
 @MainActor @Observable
 final class Updater {
     static let shared = Updater()
-    static let releasesAPI = URL(string: "https://api.github.com/repos/nitzcard/bitbucket-pr-notifier/releases/latest")!
+    static let releasesAPI = TestOverrides.url("BPRN_RELEASES_URL")
+        ?? URL(string: "https://api.github.com/repos/nitzcard/bitbucket-pr-notifier/releases/latest")!
 
     struct Release { let version: String; let url: URL }
     /// A release newer than the running app, once a check has found one.

@@ -1,0 +1,52 @@
+name: E2E tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Each test in Tests/E2E/Tests.swift runs as its own job, so each gets its own check.
+  list:
+    runs-on: ubuntu-latest
+    outputs:
+      tests: ${{ steps.list.outputs.tests }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: |
+          echo "tests=$(grep -o 'TestCase(name: "[^"]*"' Tests/E2E/Tests.swift | cut -d'"' -f2 | jq -Rsc 'split("\n") | map(select(. != ""))')" >> "$GITHUB_OUTPUT"
+
+  e2e:
+    needs: list
+    name: ${{ matrix.test }}
+    runs-on: macos-26
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        test: ${{ fromJSON(needs.list.outputs.tests) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run ${{ matrix.test }}
+        run: ./scripts/e2e.sh "${{ matrix.test }}"
+
+      - name: Upload report and recording
+        id: upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ matrix.test }}
+          path: build/e2e-report
+          if-no-files-found: ignore
+
+      - name: Summary
+        if: always() && hashFiles('build/e2e-report/summary.md') != ''
+        run: |
+          cat build/e2e-report/summary.md >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "🎥 **[Download the report with the recording](${{ steps.upload.outputs.artifact-url }})** — open \`index.html\`; click a step's time to jump to it in the video." >> "$GITHUB_STEP_SUMMARY"

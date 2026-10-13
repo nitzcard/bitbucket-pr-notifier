@@ -37,6 +37,29 @@ after every rebuild of an ad-hoc-signed app.
 - SwiftPM's default build backend fails under Command Line Tools, so the build
   script passes `--build-system native`.
 
+## End-to-end tests
+
+```sh
+./scripts/e2e.sh                         # all tests
+./scripts/e2e.sh setAndCancelReminder    # just one
+```
+
+`Tests/E2E` launches the built app against a mock Bitbucket (and a mock GitHub
+releases API) and drives it through the Accessibility API: sign-in, choosing a
+repository, the menu bar menu, refreshing, reminders, sign-out and expired
+tokens, and the update check. The app runs under its own bundle ID and support
+folder, so a real install's settings and sign-in are untouched.
+
+- The terminal needs **Accessibility** and **Screen Recording** access, and the
+  screen must be unlocked; the tests take over the mouse focus while they run.
+- The report goes to `build/e2e-report`: `index.html` with a screen recording
+  per test (click a step's time to jump to it), `junit.xml`, and `summary.md`.
+  A failed test also leaves `<test>.ax.txt`, what the app's windows showed.
+- On every push to `main`, GitHub Actions runs each test as its own job (its own
+  check) and attaches its report and recording as an artifact.
+- The app reads `BPRN_API_URL`, `BPRN_RELEASES_URL` and `BPRN_SUPPORT_DIR` only
+  for these tests (`TestOverrides.swift`).
+
 ## Releasing
 
 ```sh

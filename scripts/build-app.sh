@@ -12,7 +12,7 @@ swift_build() {
     swift build -c release --build-system native "$@" \
         2> >(grep -v "'--build-system native' has been deprecated" >&2)
 }
-swift_build
+swift_build --product BitbucketPRNotifier
 BIN="$(swift_build --show-bin-path)/BitbucketPRNotifier"
 
 rm -rf "$APP" build/AppIcon.iconset

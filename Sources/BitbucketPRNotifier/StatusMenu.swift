@@ -107,10 +107,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(action("Quit", #selector(quit), key: "q"))
 
-        // Classic menus: text only, no images beside titles.
+        // Classic menus: text only, no images beside titles. Swift 6.4 brings
+        // the macOS 27 SDK; CI's older Xcode builds without this.
+        #if compiler(>=6.4)
         if #available(macOS 27, *) {
             for item in menu.items { item.preferredImageVisibility = .hidden }
         }
+        #endif
     }
 
     /// A disabled two-line placeholder drawn with block characters, since

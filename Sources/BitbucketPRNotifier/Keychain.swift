@@ -47,8 +47,9 @@ enum Credentials: Codable {
     private static let keychainAccount = "credentials"
 
     private static func fileURL(_ name: String = "credentials") -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: "Library/Application Support/BitbucketPRNotifier/\(name).json")
+        let folder = TestOverrides.url("BPRN_SUPPORT_DIR") ?? FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: "Library/Application Support/BitbucketPRNotifier")
+        return folder.appending(path: "\(name).json")
     }
 
     /// The API token from before the last sign-out, to fill in the next sign-in.

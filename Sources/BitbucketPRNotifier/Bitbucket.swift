@@ -90,7 +90,8 @@ struct BitbucketClient {
         authorization = "Bearer \(accessToken)"
     }
 
-    private static let base = URL(string: "https://api.bitbucket.org/2.0")!
+    /// The end-to-end tests (Tests/E2E) point this at their mock server.
+    private static let base = TestOverrides.url("BPRN_API_URL") ?? URL(string: "https://api.bitbucket.org/2.0")!
 
     private static let decoder: JSONDecoder = {
         let d = JSONDecoder()
@@ -167,7 +168,9 @@ struct BitbucketClient {
             let page: Page<T> = try await get(url)
             results += page.values
             // Only follow pages on Bitbucket's API, so the credentials never go elsewhere.
-            next = page.next.flatMap { $0.scheme == "https" && $0.host == Self.base.host ? $0 : nil }
+            next = page.next.flatMap {
+                $0.scheme == Self.base.scheme && $0.host == Self.base.host && $0.port == Self.base.port ? $0 : nil
+            }
         }
         return results
     }

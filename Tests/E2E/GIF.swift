@@ -31,11 +31,14 @@ enum GIF {
         let gif = video.deletingPathExtension().appendingPathExtension("gif")
         guard let destination = CGImageDestinationCreateWithURL(gif as CFURL, UTType.gif.identifier as CFString,
                                                                 frames.count, nil) else { return nil }
-        CGImageDestinationSetProperties(destination, [
-            kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0],
-        ] as CFDictionary)
-        let frameProperties = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 1 / fps]] as CFDictionary
-        for frame in frames { CGImageDestinationAddImage(destination, frame, frameProperties) }
+        // No loop count: the GIF plays once and stays on its last frame, the
+        // test's end result. That frame is held a little longer before it stops.
+        func delay(_ seconds: Double) -> CFDictionary {
+            [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: seconds]] as CFDictionary
+        }
+        for (i, frame) in frames.enumerated() {
+            CGImageDestinationAddImage(destination, frame, delay(i == frames.count - 1 ? 3 : 1 / fps))
+        }
         return CGImageDestinationFinalize(destination) ? gif : nil
     }
 

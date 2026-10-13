@@ -57,7 +57,7 @@ folder, so a real install's settings and sign-in are untouched.
   A failed test also leaves `<test>.ax.txt`, what the app's windows showed.
 - On every push to `main`, GitHub Actions runs each test as its own job (its own
   check) and attaches its report and recording as an artifact. The job's
-  summary shows the recording as a GIF, kept on the `e2e-recordings/<test>`
+  summary shows the recording as a GIF that plays once and stops on the end result, kept on the `e2e-recordings/<test>`
   branch; each run replaces it, so only the latest run's GIF is kept.
 - The app reads `BPRN_API_URL`, `BPRN_RELEASES_URL` and `BPRN_SUPPORT_DIR` only
   for these tests (`TestOverrides.swift`).

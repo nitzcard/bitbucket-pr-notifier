@@ -46,8 +46,9 @@ after every rebuild of an ad-hoc-signed app.
 
 `Tests/E2E` launches the built app against a mock Bitbucket (and a mock GitHub
 releases API) and drives it through the Accessibility API: sign-in, choosing a
-repository, the menu bar menu, refreshing, reminders, sign-out and expired
-tokens, and the update check. The app runs under its own bundle ID and support
+repository, the menu bar menu, refreshing, reminders, nagging mergers and
+asking to merge (against a mock Slack webhook), sign-out and expired tokens,
+and the update check. The app runs under its own bundle ID and support
 folder, so a real install's settings and sign-in are untouched.
 
 - The terminal needs **Accessibility** and **Screen Recording** access, and the

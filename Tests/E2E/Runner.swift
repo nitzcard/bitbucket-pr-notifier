@@ -4,6 +4,8 @@ struct TestCase {
     let name: String
     /// Starts signed in and watching acme/web, instead of from a first launch.
     var signedIn = true
+    /// Saves more settings before launch, after the sign-in.
+    var setUp: ((AppUnderTest) throws -> Void)? = nil
     let body: (TestContext) throws -> Void
 }
 
@@ -65,6 +67,7 @@ struct Runner {
             var failure: String?
             do {
                 if test.signedIn { try app.seedSignedIn() }
+                try test.setUp?(app)
                 context.step("Launch the app")
                 try app.launch()
                 try test.body(context)

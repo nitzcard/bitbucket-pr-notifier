@@ -24,6 +24,8 @@ final class AppModel {
     }
 
     private(set) var pullRequests: [PullRequest] = []
+    /// Open PRs I opened in the watched repo, with each reviewer's state.
+    private(set) var myPullRequests: [PullRequest] = []
     /// My comment count per PR id, refetched only when the PR's `updatedOn` changes.
     private var myComments: [Int: (updatedOn: Date, count: Int)] = [:]
     private(set) var status: Status = .signedOut
@@ -33,6 +35,36 @@ final class AppModel {
     private(set) var showsSkeleton = false
     /// Reminders for the current repo, by PR id (see Reminders.swift).
     var reminders: [Int: Reminder] = [:]
+    /// Slack nags to the mergers about my PRs, by PR id (see ReviewerNags.swift).
+    var nags: [Int: ReviewerNag] = [:] {
+        didSet { saveRepoSetting(try? JSONEncoder().encode(nags), "nags") }
+    }
+    /// Who I asked to merge each of my PRs, by PR id.
+    var mergeAsked: [Int: String] = [:] {
+        didSet { saveRepoSetting(Dictionary(uniqueKeysWithValues: mergeAsked.map { (String($0.key), $0.value) }), "mergeAsked") }
+    }
+
+    /// This repo's setting: offer to ask a merger when one of my PRs gets its first approval.
+    var askToMerge = false { didSet { saveRepoSetting(askToMerge, "askToMerge") } }
+    /// Who can merge in this repo (some repos let only a few people merge).
+    var mergers: [SlackPerson] = [] { didSet { saveRepoSetting(try? JSONEncoder().encode(mergers), "mergers") } }
+
+    /// Slack Workflow Builder webhook that sends DMs (see Slack.swift). Empty:
+    /// messages are copied and the DM opened in Slack instead.
+    var slackWebhook = UserDefaults.standard.string(forKey: "slackWebhook") ?? "" {
+        didSet { UserDefaults.standard.set(slackWebhook, forKey: "slackWebhook") }
+    }
+    /// Slack user token (xoxp-…) that sends DMs as me; kept in the Keychain. Wins over the webhook.
+    var slackToken = Keychain.load(account: "slackUserToken").flatMap { String(data: $0, encoding: .utf8) } ?? "" {
+        didSet {
+            if slackToken.isEmpty { Keychain.delete(account: "slackUserToken") }
+            else { Keychain.save(Data(slackToken.utf8), account: "slackUserToken") }
+        }
+    }
+    /// The Slack workspace ID (T…), for opening DMs without a webhook.
+    var slackTeam = UserDefaults.standard.string(forKey: "slackTeam") ?? "" {
+        didSet { UserDefaults.standard.set(slackTeam, forKey: "slackTeam") }
+    }
     /// Mirrors the macOS notification permission; Settings warns when it's off.
     var notificationsAllowed = true
     private(set) var lastUpdated: Date?
@@ -46,9 +78,12 @@ final class AppModel {
             UserDefaults.standard.set(repo, forKey: "repo")
             knownIDs = nil
             pullRequests = []
+            myPullRequests = []
             myComments = [:]
             lastUpdated = nil
             reminders = Self.loadReminders(repo: repo)
+            rescheduleReminders()
+            loadRepoSettings()
             Task { await refresh() }
         }
     }
@@ -60,8 +95,15 @@ final class AppModel {
         get { repo.flatMap { UserDefaults.standard.array(forKey: "knownIDs.\($0)") as? [Int] }.map(Set.init) }
         set { if let repo { UserDefaults.standard.set(newValue.map(Array.init), forKey: "knownIDs.\(repo)") } }
     }
+    /// My PRs that were approved at least once, persisted per repo like
+    /// `knownIDs`, so each first approval is announced once.
+    var approvedIDs: Set<Int>? {
+        get { repo.flatMap { UserDefaults.standard.array(forKey: "approvedIDs.\($0)") as? [Int] }.map(Set.init) }
+        set { if let repo { UserDefaults.standard.set(newValue.map(Array.init), forKey: "approvedIDs.\(repo)") } }
+    }
     private(set) var userUUID: String?
     private var pollTask: Task<Void, Never>?
+    var nagTask: Task<Void, Never>?
 
     private var credentials: Credentials? = Credentials.load()
     /// Shared so concurrent callers don't spend the same rotating refresh token twice.
@@ -72,11 +114,27 @@ final class AppModel {
     init() {
         status = credentials == nil ? .signedOut : .ok
         reminders = Self.loadReminders(repo: repo)
+        rescheduleReminders()
+        loadRepoSettings()
+    }
+
+    private func loadRepoSettings() {
+        let defaults = UserDefaults.standard
+        nags = Self.loadNags(repo: repo)
+        mergers = Self.loadMergers(repo: repo)
+        askToMerge = repo.map { defaults.bool(forKey: "askToMerge.\($0)") } ?? false
+        let asked = repo.flatMap { defaults.dictionary(forKey: "mergeAsked.\($0)") as? [String: String] } ?? [:]
+        mergeAsked = Dictionary(uniqueKeysWithValues: asked.compactMap { k, v in Int(k).map { ($0, v) } })
+    }
+
+    private func saveRepoSetting(_ value: Any?, _ key: String) {
+        if let repo { UserDefaults.standard.set(value, forKey: "\(key).\(repo)") }
     }
 
     /// Checks once now, then keeps checking if automatic refresh is on.
     /// Called again whenever the refresh settings change.
     func start() {
+        startNagging()
         pollTask?.cancel()
         pollTask = Task {
             await refresh()
@@ -128,6 +186,7 @@ final class AppModel {
         UserDefaults.standard.set(user.display_name, forKey: "accountName")
         userUUID = user.uuid
         status = .ok
+        rescheduleReminders()
         NSApp.activate(ignoringOtherApps: true) // come back from the browser
         await refresh()
     }
@@ -140,7 +199,9 @@ final class AppModel {
         userUUID = nil
         knownIDs = nil
         pullRequests = []
+        myPullRequests = []
         status = .signedOut
+        rescheduleReminders()
         updateDockBadge()
     }
 
@@ -160,6 +221,7 @@ final class AppModel {
             let client = try await client()
             if userUUID == nil { userUUID = try await client.currentUser().uuid }
             let prs = try await client.pullRequests(repo: repo, reviewerUUID: userUUID!)
+            let mine = try await client.pullRequests(repo: repo, authorUUID: userUUID!)
             guard repo == self.repo else { return } // repo changed mid-request
 
             if let knownIDs {
@@ -170,6 +232,10 @@ final class AppModel {
             await updateMyComments(prs, repo: repo, client: client)
             if userInitiated { try? await Task.sleep(until: started + .milliseconds(400)) }
             pullRequests = prs
+            announceApprovals(mine)
+            await announceMerges(mine, repo: repo, client: client)
+            myPullRequests = mine
+            pruneNags(mine)
             pruneReminders(prs)
             topUpFastNags()
             lastUpdated = Date()
@@ -180,6 +246,27 @@ final class AppModel {
             status = .error(error.localizedDescription)
         }
         updateDockBadge()
+    }
+
+    /// Notifies about my PRs that left the open list because they were merged
+    /// (not declined). The first check of a repo only notes which are open; a
+    /// PR whose state couldn't be fetched is tried again next check.
+    private func announceMerges(_ mine: [PullRequest], repo: String, client: BitbucketClient) async {
+        let key = "myOpenIDs.\(repo)"
+        let open = Set(mine.map(\.id))
+        let known = (UserDefaults.standard.array(forKey: key) as? [Int]).map(Set.init) ?? open
+        var unresolved = Set<Int>()
+        for id in known.subtracting(open).sorted() {
+            do {
+                let closed = try await client.pullRequestState(repo: repo, prID: id)
+                if closed.state == "MERGED" { Notifier.announceMerge(title: closed.title, url: closed.url) }
+            } catch BitbucketError.http(404, _) {
+                // Deleted: nothing to announce.
+            } catch {
+                unresolved.insert(id)
+            }
+        }
+        UserDefaults.standard.set(Array(open.union(unresolved)), forKey: key)
     }
 
     func myCommentCount(_ pr: PullRequest) -> Int { myComments[pr.id]?.count ?? 0 }

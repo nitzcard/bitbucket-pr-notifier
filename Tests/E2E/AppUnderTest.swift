@@ -37,6 +37,16 @@ final class AppUnderTest {
         shell("/usr/bin/defaults", "write", Self.bundleID, "email", "-string", MockBitbucket.email)
     }
 
+    /// Slack set up: the mock's webhook, a merger for acme/web with "ask to
+    /// merge" on, and a member ID for the reviewer Alan.
+    func seedSlack() throws {
+        let mergers = try JSONSerialization.data(withJSONObject: [["name": "Linus Torvalds", "memberID": "ULINUS"], ["name": "Grace Hopper", "memberID": ""]])
+        let hex = mergers.map { String(format: "%02x", $0) }.joined()
+        shell("/usr/bin/defaults", "write", Self.bundleID, "slackWebhook", "-string", mock.slackWebhookURL)
+        shell("/usr/bin/defaults", "write", Self.bundleID, "askToMerge.acme/web", "-bool", "true")
+        shell("/usr/bin/defaults", "write", Self.bundleID, "mergers.acme/web", "-data", hex)
+    }
+
     func launch() throws {
         let process = Process()
         process.executableURL = appURL.appending(path: "Contents/MacOS/BitbucketPRNotifier")

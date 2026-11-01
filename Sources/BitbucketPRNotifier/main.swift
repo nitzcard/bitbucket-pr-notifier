@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Notifier.shared.setUp()
         Notifier.shared.onOpenWindow = { WindowManager.shared.showMain() }
+        Notifier.shared.onAskToMerge = { WindowManager.shared.showAskToMerge(for: $0) }
         statusMenu = StatusMenu()
         AppModel.shared.start()
         Updater.shared.start()

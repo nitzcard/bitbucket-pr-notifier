@@ -9,15 +9,21 @@ struct PullRequest: Identifiable, Equatable, Decodable {
     let updatedOn: Date
     /// UUIDs of participants who approved.
     let approvers: Set<String>
+    /// Names of those who approved, for "Rachel Green has approved …".
+    let approverNames: [String]
     /// UUIDs of participants who commented or approved (Bitbucket sets
     /// `participated_on` for either).
     let participants: Set<String>
+    /// The requested reviewers and where each one is with it.
+    let reviewers: [Reviewer]
 
-    private enum CodingKeys: String, CodingKey { case id, title, links, author, created_on, updated_on, participants }
+    private enum CodingKeys: String, CodingKey { case id, title, links, author, created_on, updated_on, participants, reviewers }
+    private struct Account: Decodable { let uuid: String?; let display_name: String? }
     private struct Participant: Decodable {
-        struct User: Decodable { let uuid: String? }
-        let user: User?
+        let user: Account?
         let approved: Bool?
+        /// "approved", "changes_requested", or null.
+        let state: String?
         let participated_on: String?
     }
     private struct Links: Decodable { let html: Href }
@@ -34,8 +40,18 @@ struct PullRequest: Identifiable, Equatable, Decodable {
         updatedOn = (try? c.decode(Date.self, forKey: .updated_on)) ?? createdOn
         let participants = (try? c.decode([Participant].self, forKey: .participants)) ?? []
         approvers = Set(participants.filter { $0.approved == true }.compactMap { $0.user?.uuid })
+        approverNames = participants.filter { $0.approved == true }.compactMap { $0.user?.display_name }
         self.participants = Set(participants.filter { $0.approved == true || $0.participated_on != nil }
             .compactMap { $0.user?.uuid })
+        let byUUID = Dictionary(participants.compactMap { p in p.user?.uuid.map { ($0, p) } }, uniquingKeysWith: { a, _ in a })
+        reviewers = ((try? c.decode([Account].self, forKey: .reviewers)) ?? []).compactMap { account in
+            guard let uuid = account.uuid else { return nil }
+            let p = byUUID[uuid]
+            let state: Reviewer.State = p?.approved == true || p?.state == "approved" ? .approved
+                : p?.state == "changes_requested" ? .changesRequested
+                : p?.participated_on != nil ? .commented : .waiting
+            return Reviewer(uuid: uuid, name: account.display_name ?? "Unknown", state: state)
+        }
     }
 
     /// Unreviewed by `me`: no comment and no approval yet.
@@ -43,6 +59,25 @@ struct PullRequest: Identifiable, Equatable, Decodable {
         guard let me else { return true }
         return !participants.contains(me)
     }
+}
+
+struct Reviewer: Equatable {
+    enum State { case waiting, commented, changesRequested, approved }
+    let uuid: String
+    let name: String
+    let state: State
+
+    var stateText: String {
+        switch state {
+        case .waiting: "Waiting"
+        case .commented: "Commented"
+        case .changesRequested: "Changes requested"
+        case .approved: "Approved"
+        }
+    }
+
+    /// Still owes a review: hasn't approved or asked for changes.
+    var isPending: Bool { state == .waiting || state == .commented }
 }
 
 struct BitbucketUser: Decodable {
@@ -135,13 +170,38 @@ struct BitbucketClient {
 
     /// Open PRs in `repo` where `reviewerUUID` is a reviewer, newest first.
     func pullRequests(repo: String, reviewerUUID: String) async throws -> [PullRequest] {
+        try await openPullRequests(repo: repo, matching: "reviewers.uuid=\"\(reviewerUUID)\"")
+    }
+
+    /// Open PRs in `repo` that `authorUUID` opened, newest first.
+    func pullRequests(repo: String, authorUUID: String) async throws -> [PullRequest] {
+        try await openPullRequests(repo: repo, matching: "author.uuid=\"\(authorUUID)\"")
+    }
+
+    private func openPullRequests(repo: String, matching query: String) async throws -> [PullRequest] {
         var url = Self.base.appending(path: "repositories/\(repo)/pullrequests")
         url.append(queryItems: [
-            .init(name: "q", value: "state=\"OPEN\" AND reviewers.uuid=\"\(reviewerUUID)\""),
+            .init(name: "q", value: "state=\"OPEN\" AND \(query)"),
             .init(name: "pagelen", value: "50"),
-            .init(name: "fields", value: "next,values.id,values.title,values.links.html,values.author.display_name,values.created_on,values.updated_on,values.participants.user.uuid,values.participants.approved,values.participants.participated_on"),
+            .init(name: "fields", value: "next,values.id,values.title,values.links.html,values.author.display_name,values.created_on,values.updated_on,values.participants.user.uuid,values.participants.user.display_name,values.participants.approved,values.participants.state,values.participants.participated_on,values.reviewers.uuid,values.reviewers.display_name"),
         ])
         return try await getAllPages(url, as: PullRequest.self).sorted { $0.createdOn > $1.createdOn }
+    }
+
+    /// A PR's state ("OPEN", "MERGED", "DECLINED", "SUPERSEDED") and how to show it.
+    struct PullRequestState: Decodable {
+        let state: String
+        let title: String
+        let links: Links
+        struct Links: Decodable { let html: Href }
+        struct Href: Decodable { let href: URL }
+        var url: URL { links.html.href }
+    }
+
+    func pullRequestState(repo: String, prID: Int) async throws -> PullRequestState {
+        var url = Self.base.appending(path: "repositories/\(repo)/pullrequests/\(prID)")
+        url.append(queryItems: [.init(name: "fields", value: "state,title,links.html")])
+        return try await get(url)
     }
 
     /// Number of (non-deleted) comments `uuid` left on a PR.

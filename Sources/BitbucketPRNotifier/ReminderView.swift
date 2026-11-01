@@ -128,18 +128,8 @@ struct ReminderView: View {
     private var seconds: TimeInterval { every * (unit == .hours ? 3600 : 60) }
     private var tooShort: Bool { seconds < Reminder.minNagSeconds }
 
-    private static func format(_ value: Double) -> String {
-        value.formatted(.number.precision(.fractionLength(0...2)).grouping(.never))
-    }
-
-    private static func decimalOnly(_ text: String) -> String {
-        var seenPoint = false
-        return String(text.filter { ch in
-            if ch.isNumber { return true }
-            if ch == ".", !seenPoint { seenPoint = true; return true }
-            return false
-        }.prefix(6))
-    }
+    private static func format(_ value: Double) -> String { NumberText.format(value) }
+    private static func decimalOnly(_ text: String) -> String { NumberText.decimalOnly(text) }
 
     /// A single native radio button bound to `mode`; two of these share it.
     private func radio(_ title: String, _ value: Mode) -> some View {
@@ -172,5 +162,22 @@ struct ReminderView: View {
             model.setReminder(.nag(seconds), for: selected)
         }
         done()
+    }
+}
+
+/// The interval field's text, shared by the reminder and nag sheets.
+enum NumberText {
+    static func format(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0...2)).grouping(.never))
+    }
+
+    /// Digits and one decimal point; anything else is dropped as it's typed.
+    static func decimalOnly(_ text: String) -> String {
+        var seenPoint = false
+        return String(text.filter { ch in
+            if ch.isNumber { return true }
+            if ch == ".", !seenPoint { seenPoint = true; return true }
+            return false
+        }.prefix(6))
     }
 }

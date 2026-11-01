@@ -28,6 +28,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             let count = model.pullRequests.count
             item.button?.title = count > 0 ? " \(count)" : ""
             _ = model.showsSkeleton
+            _ = model.myPullRequests
+            _ = model.nags
+            _ = model.mergeAsked
             _ = model.status
             _ = model.notificationsAllowed
             _ = model.autoRefresh
@@ -73,18 +76,30 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(disabled(placeholder.text))
             if let command = placeholder.action { menu.addItem(action(command, #selector(openSettings))) }
         } else {
+            menu.addItem(.sectionHeader(title: "To Review"))
+            if model.pullRequests.isEmpty { menu.addItem(disabled(AppModel.noReviewsText)) }
             for pr in model.pullRequests {
                 let row = action(pr.title, #selector(openPR(_:)))
                 row.representedObject = pr.url
                 row.attributedTitle = Self.twoLineTitle(pr.title, details: NSAttributedString(string: model.details(for: pr, includeReminder: true)))
                 menu.addItem(row)
-                // Holding ⌥ swaps the row for its reminder action (standard Mac alternate item).
-                let alt = action(model.remindCommand(for: pr), #selector(remindAbout(_:)))
-                alt.attributedTitle = Self.twoLineTitle(alt.title, details: NSAttributedString(string: Self.truncate(pr.title)))
-                alt.representedObject = pr.id
-                alt.isAlternate = true
-                alt.keyEquivalentModifierMask = [.option]
-                menu.addItem(alt)
+                menu.addItem(prAction(model.remindCommand(for: pr), #selector(remindAbout(_:)), pr))
+            }
+
+            menu.addItem(.separator())
+            menu.addItem(.sectionHeader(title: "My Pull Requests"))
+            if model.myPullRequests.isEmpty { menu.addItem(disabled(AppModel.noMyPullRequestsText)) }
+            for pr in model.myPullRequests {
+                let row = action(pr.title, #selector(openPR(_:)))
+                row.representedObject = pr.url
+                row.attributedTitle = Self.twoLineTitle(pr.title, details: NSAttributedString(string: model.myDetails(for: pr, includeNag: true)))
+                menu.addItem(row)
+                // Before the first approval, nag the mergers; after it, ask one to merge.
+                if !pr.approvers.isEmpty {
+                    menu.addItem(prAction("Ask to Merge…", #selector(askToMerge(_:)), pr))
+                } else {
+                    menu.addItem(prAction(model.nagCommand(for: pr), #selector(nagAbout(_:)), pr))
+                }
             }
         }
 
@@ -97,6 +112,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let remind = action("Remind Me…", #selector(openReminder))
         if model.pullRequests.isEmpty { remind.action = nil }
         menu.addItem(remind)
+
         // Only needed when the app isn't checking on its own.
         if !model.autoRefresh { menu.addItem(action("Refresh", #selector(refresh), key: "r")) }
 
@@ -153,6 +169,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return item
     }
 
+    /// A command for the PR above it, indented under it.
+    private func prAction(_ title: String, _ selector: Selector, _ pr: PullRequest) -> NSMenuItem {
+        let item = action(title, selector)
+        item.representedObject = pr.id
+        item.indentationLevel = 1
+        return item
+    }
+
     private func disabled(_ title: String) -> NSMenuItem {
         NSMenuItem(title: title, action: nil, keyEquivalent: "")
     }
@@ -177,6 +201,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         guard let id = sender.representedObject as? Int,
               let pr = model.pullRequests.first(where: { $0.id == id }) else { return }
         WindowManager.shared.showReminder(for: pr)
+    }
+
+    @objc private func askToMerge(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? Int { WindowManager.shared.showAskToMerge(for: id) }
+    }
+
+    @objc private func nagAbout(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? Int,
+              let pr = model.myPullRequests.first(where: { $0.id == id }) else { return }
+        WindowManager.shared.showNag(for: pr)
     }
 
     @objc private func openReminder() { WindowManager.shared.showReminder(for: nil) }

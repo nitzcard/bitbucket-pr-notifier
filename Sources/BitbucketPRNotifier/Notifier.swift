@@ -9,6 +9,8 @@ private let log = Logger(subsystem: "io.github.bitbucketprnotifier", category: "
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     static let shared = Notifier()
     var onOpenWindow: (() -> Void)?
+    /// Opens the Ask to Merge sheet for a PR id.
+    var onAskToMerge: ((Int) -> Void)?
 
     func setUp() {
         let center = UNUserNotificationCenter.current()
@@ -53,6 +55,54 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// One of my PRs got its first approval; clicking opens Ask to Merge.
+    static func offerToAskToMerge(_ pr: PullRequest) {
+        let content = UNMutableNotificationContent()
+        content.sound = .default
+        let names = ListFormatter.localizedString(byJoining: pr.approverNames)
+        let who = names.isEmpty ? "Someone has" : pr.approverNames.count == 1 ? "\(names) has" : "\(names) have"
+        content.title = "Approved"
+        content.body = "\(who) approved \u{201C}\(pr.title)\u{201D}. Click to ask someone to merge it."
+        content.userInfo = ["askToMerge": pr.id]
+        post(content, "approval for #\(pr.id)")
+    }
+
+    /// One of my PRs was merged; clicking opens it.
+    static func announceMerge(title: String, url: URL) {
+        let content = UNMutableNotificationContent()
+        content.sound = .default
+        content.title = "Merged"
+        content.body = "\u{201C}\(title)\u{201D} has been merged."
+        content.userInfo = ["url": url.absoluteString]
+        post(content, "merge")
+    }
+
+    /// With no Slack webhook, a scheduled message can't send itself: clicking
+    /// this copies it and opens the person's DM.
+    static func offerSlackMessage(_ text: String, to person: SlackPerson, team: String) {
+        let content = UNMutableNotificationContent()
+        content.sound = .default
+        content.title = "Message \(person.name) on Slack"
+        content.body = text
+        content.userInfo = ["slackMember": person.memberID, "slackTeam": team, "slackText": text]
+        post(content, "slack prompt")
+    }
+
+    static func reportSlackFailure(_ error: Error, to person: SlackPerson) {
+        let content = UNMutableNotificationContent()
+        content.title = "Couldn't Message \(person.name) on Slack"
+        content.body = error.localizedDescription
+        post(content, "slack failure")
+    }
+
+    private static func post(_ content: UNNotificationContent, _ what: String) {
+        log.info("posting \(what, privacy: .public)")
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)) { error in
+            if let error { log.error("post failed: \(error.localizedDescription, privacy: .public)") }
+        }
+    }
+
     // Show banners even while the app is frontmost.
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
@@ -63,9 +113,14 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        let url = (response.notification.request.content.userInfo["url"] as? String).flatMap(URL.init(string:))
+        let info = response.notification.request.content.userInfo
+        let url = (info["url"] as? String).flatMap(URL.init(string:))
         DispatchQueue.main.async {
-            if let url {
+            if let prID = info["askToMerge"] as? Int {
+                self.onAskToMerge?(prID)
+            } else if let member = info["slackMember"] as? String, let text = info["slackText"] as? String {
+                Slack.openDM(memberID: member, team: info["slackTeam"] as? String ?? "", text: text)
+            } else if let url {
                 NSWorkspace.shared.open(url)
             } else {
                 self.onOpenWindow?()

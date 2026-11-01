@@ -9,7 +9,7 @@ final class WindowManager {
 
     private var mainWindow: NSWindow?
     private var settingsWindow: NSWindow?
-    private var reminderSheet: NSWindow?
+    private var sheet: NSWindow?
 
     func showMain() {
         let window = mainWindow ?? makeWindow(
@@ -34,22 +34,30 @@ final class WindowManager {
     /// "Remind Me" is a sheet on the PR list window: it always stays in front
     /// of the list and must be answered before the list is used again.
     func showReminder(for pr: PullRequest?) {
-        showMain()
-        guard let main = mainWindow else { return }
-        if let reminderSheet { main.endSheet(reminderSheet) }
-        let sheet = makeWindow(
-            title: "Remind Me",
-            root: ReminderView(preselected: pr?.id) { [weak self] in self?.closeReminder() },
-            size: nil,
-            resizing: .none)
-        reminderSheet = sheet
-        main.beginSheet(sheet)
+        showSheet("Remind Me", ReminderView(preselected: pr?.id) { [weak self] in self?.closeSheet() })
     }
 
-    private func closeReminder() {
-        guard let sheet = reminderSheet else { return }
+    func showNag(for pr: PullRequest?) {
+        showSheet("Nag Mergers", NagView(preselected: pr?.id) { [weak self] in self?.closeSheet() })
+    }
+
+    func showAskToMerge(for prID: Int?) {
+        showSheet("Ask to Merge", AskToMergeView(preselected: prID) { [weak self] in self?.closeSheet() })
+    }
+
+    private func showSheet(_ title: String, _ root: some View) {
+        showMain()
+        guard let main = mainWindow else { return }
+        if let sheet { main.endSheet(sheet) }
+        let window = makeWindow(title: title, root: root, size: nil, resizing: .none)
+        sheet = window
+        main.beginSheet(window)
+    }
+
+    private func closeSheet() {
+        guard let sheet else { return }
         mainWindow?.endSheet(sheet)
-        reminderSheet = nil
+        self.sheet = nil
     }
 
     /// A window that opens cascades from the app's frontmost open window (the
